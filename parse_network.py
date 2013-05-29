@@ -13,39 +13,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from multiprocessing import Process, Queue
+
 from genGraphs import *
 from groupMetrics import *
-class dataObject():
-    numNodes = 0
-    numEdges = 0
-    averageShortestPath = 0
-    averageShortestPathWeighted = 0
-    maxShortestPath = 0
-    maxShortestPathWeighted = 0
-    groupBetweenness = defaultdict(list)
-    def printData(self):
-        print "This graph has: "
-        print self.numNodes, "nodes"
-        print self.numEdges, "links"
-        print self.averageShortestPathWeighted, "is \
-                the average shortest path lenght (Weighted)"
-        print self.maxShortestPathWeighted, "is the\
-                Max shortest path lenght (Weighted)"
-        print self.averageShortestPath, "is the average\
-                shortest path lenght"
-        print self.maxShortestPath, "is the Max shortest\
-                path lenght"
-        for gSize in self.groupBetweenness:
-            print "best betweenness for group size", gSize, "is",\
-                self.groupBetweenness[gSize][0], "for groups:"
-            for g in self.groupBetweenness[gSize][1]:
-                print g,
-            print ""
-            
+from graphAnalyzer import *
 
 
 
 def parseArgs():
+    """ argument parser."""
     lfile = []
     showGraph = False
     extractData = False
@@ -76,51 +52,31 @@ def parseArgs():
             t=testRun)
 
 def usage():
+    """ print the allowed arguments. """
     print >> sys.stderr, "Analyze the community-network graph"
     print >> sys.stderr, "usage:", 
     print >> sys.stderr, "./parse_ninux.py:"
-    print >> sys.stderr, " -f graph_definition.txt\
-            (adjacency list as used by networkX)"
+    print >> sys.stderr, " -f graph\
+            (adjacency list (.adj) or edge list (.edges) as used by networkX)"
     print >> sys.stderr, " [-s] show graph" 
+    print >> sys.stderr, " [-t] run a test with known graphs" 
 
 
 class configuration():
+    """ configuration parameters storage class."""
     fileList = []
     showGraph = False
     extractData = True
     testRun = False
+    libPath = "./libs/"
     def __init__(self, fileList, s=False, e=False, t=False):
         self.fileList = fileList
         self.showGraph = s
         self.extractData = e
         self.testRun = t
 
-def extractData(G):
-    results = dataObject()
-    results.numEdges = len(G.edges())
-    results.numNodes = len(G.nodes())
-    pathLenghts = nx.all_pairs_dijkstra_path_length(G, 
-            weight="weight").values()
-    results.averageShortestPathWeighted = np.average(
-            [ x.values()[0] for x in pathLenghts])
-    results.maxShortestPathWeighted = np.max(
-            [ x.values()[0] for x in pathLenghts])
-    pathLenghts = nx.all_pairs_shortest_path_length(G).values()
-    results.averageShortestPath = np.average(
-            [ x.values()[0] for x in pathLenghts])
-    results.maxShortestPath = np.max(
-            [ x.values()[0] for x in pathLenghts])
-    cache = None
-    for i in range(1,6):
-        betw = computeGroupMetrics(G, groupSize=i, weighted=True, 
-            cutoff = 2, shortestPathsCache=cache)
-        cache = betw[2]
-        results.groupBetweenness[i] = [betw[0], betw[1]]
-        print i, betw[0], betw[1]
-    results.printData()
-    
 def testRun():
-    
+    """ run groupMetrics on a known set of graphs, check the results.""" 
     print >> sys.stderr, "Testing group betweenness centrality"
     L = genGraph("LINEAR", 3)
     betw, solB, clos, solC, s = computeGroupMetrics(L, 1, weighted = False, 
@@ -205,9 +161,8 @@ def testRun():
 
 
 
-
-
 def showGraph(C):
+    """ show the graph topology."""
     weights = zip(*C.edges(data=True))[2]
     colors = []
     for w in weights:
@@ -223,7 +178,6 @@ def showGraph(C):
     #nx.write_adjlist(C, "/tmp/graph.list")
     plt.show()
 
-
 if __name__ == '__main__':
     graphArray = []
     conf = parseArgs()
@@ -238,4 +192,5 @@ if __name__ == '__main__':
                 showGraph(C)
             if conf.extractData == True:
                 extractData(C)
+
 

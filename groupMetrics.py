@@ -11,7 +11,7 @@ def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
     """ find the set of nodes of with highest group betweenness.  
     
     Use weighted/nonweighted graphs and consider paths
-    longer than cutoff.
+    longer than cutoff. It uses multi-process to speed-up analysis
 
     Parameters
     --------------
@@ -26,6 +26,12 @@ def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
 
     Return : best betweenness, array of groups of nodes, shortestPaths
     """
+
+
+    # compute all the shortest paths. Depending on the graph dimension
+    # this could be really large. Depending on the number of times you 
+    # will need this data, it is worth to compute it once and keep it
+    # for further analysis.
     if shortestPathsCache == None:
         if cutoff <= 0:
             print >> sys.stderr, "Error: did you set a cutoff value",\
@@ -35,11 +41,6 @@ def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
         shortestPaths = defaultdict(defaultdict)
         for source in graph.nodes():
                 for target in graph.nodes():
-                    # I do not consider paths of length 1
-                    # recall that minimum path lenght is 1:
-                    #  path(0,0) = [0]
-                    if source == target:
-                        continue
                     if not weighted:
                         shortestPathsGen = nx.all_shortest_paths(graph,
                             source, target)
@@ -61,6 +62,7 @@ def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
                         for route in shortestPaths[source][target]:
                             routeL = len(route['path'])
                             # recall that len(route) counts the end nodes
+                            # so len(path(0,1)) = len([0,1]) = 2
                             if routeL <= cutoff:
                                 tooShortPaths.append(target)
                                 break
@@ -73,7 +75,7 @@ def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
 
     solutionsBetweenness = defaultdict(list)
     solutionsCloseness = defaultdict(list)
-    # remove leaf nodes
+    # remove leaf nodes, they have no centrality
     purgedGraph = []
     for node in graph.nodes():
         if graph.degree(node) > 1:
@@ -140,12 +142,22 @@ def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
     print "Launched and ended", numComb, "processes"
     bestBet = sorted(solutionsBetweenness, reverse=True)[0]
     bestClos = sorted(solutionsCloseness)[0]
+
+    # to have less computation it is better to compute betweenness 
+    # without 1-hop routes. But to compute closeness we need all the routes.
+    # If cutoff = 2 we can get the 1-hop neighbors from the graph, if cutoff>2 
+    # the closeness value is meaningless
+    if cutoff > 2:
+        print >> sys.stderr, "Cutoff value larger than 2, closeness \
+                centrality has no meaning"
+        solutionsCloseness[bestClos] = []
     return bestBet, solutionsBetweenness[bestBet], \
             bestClos, solutionsCloseness[bestClos], shortestPaths
 
 
 def groupBetweenness(graph, group, shortestPaths, q):
-    """ given graph, group, and the shortest paths return the betweeness"""
+    """ compute the group betweeness and closeness centrality."""
+
     numPathsMatched = 0.0
     numPaths = 0
     totalPathLenght = 0
@@ -155,15 +167,12 @@ def groupBetweenness(graph, group, shortestPaths, q):
         if source in group:
             continue
         firstMatchLength = MAX_PATH_WEIGHT
-        #print source, shortestPaths[source],\
-        #        set(nx.neighbors(graph,source)),  set(group)
-
         neighSet = set(nx.neighbors(graph,source)) & set(group)
         firstMatchLength = MAX_PATH_WEIGHT
         # 1) a node in group is neighbor of source
         if neighSet != set():
-            #print neighSet
-            # find the neighbor, save the closeness
+            # if cutoff > 1 we miss 1-hop routes, so get the neighbors
+            # from the graph
             for n in neighSet:
                 if n in graph[source]:
                     if 'weight' in graph[source][n]:
@@ -178,8 +187,6 @@ def groupBetweenness(graph, group, shortestPaths, q):
             #   - update the closeness centrality
             #   - skip the betweenness (we omit the case "dest is in group")
             if dest in group:
-                # if cutoff > 1 we miss some routes, and we always 
-                # miss the neighbors, but we counted them in case 1)
                 if shortestPaths[source][dest] != []:
                     length = shortestPaths[source][dest][0]['weight']
                     if firstMatchLength > length:

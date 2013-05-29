@@ -22,7 +22,7 @@ def loadGraph(fname, remap=False, connected=True):
     fname : string
         filname to open
     remap : bool
-        do we want to remap the labels to continuos integers?
+        remap the labels to a sequence of integers 
     connected : bool
         return only the larges component subgraph
 
@@ -79,9 +79,10 @@ def genGraph(graphKind, numNodes):
     elif graphKind == unitDisk:
         r = 70
         # 90 nodes with 400*400 is ok, try to keep the same density
-        density = 90.0/(400*400)
-        area = numNodes/density
+        #density = 90.0/(400*400)
+        #area = numNodes/density
         #xSize = np.sqrt(area)
+
         xSize = 150 # use this to keep area fixed
         w = dict((i,r/2) for i in range(numNodes))
         for i in range(1000):

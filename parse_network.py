@@ -7,9 +7,10 @@ import time
 import os
 import math
 import scipy.stats 
+import code
+# use code.interact(local=locals()) to stop the program flow and inspect
 
 import networkx as nx
-import matplotlib.pyplot as plt
 import numpy as np
 
 from multiprocessing import Process, Queue
@@ -17,6 +18,7 @@ from multiprocessing import Process, Queue
 from genGraphs import *
 from groupMetrics import *
 from graphAnalyzer import *
+from miscLibs import *
 
 
 
@@ -161,23 +163,6 @@ def testRun():
 
 
 
-def showGraph(C):
-    """ show the graph topology."""
-    weights = zip(*C.edges(data=True))[2]
-    colors = []
-    for w in weights:
-        if w != {}:
-            colors.append(1/float(w['weight']))
-    if len(colors) != 0:
-        nx.draw(C, edge_color=colors, width=4, 
-            edge_cmap=plt.cm.Blues, 
-            edge_vmin=min(colors), edge_vmax=max(colors))
-    else:
-        nx.draw(C, width=4)
-    #plt.savefig("/tmp/graph.svg")
-    #nx.write_adjlist(C, "/tmp/graph.list")
-    plt.show()
-
 if __name__ == '__main__':
     graphArray = []
     conf = parseArgs()
@@ -187,7 +172,7 @@ if __name__ == '__main__':
     if conf.fileList != []:
         for fname in conf.fileList:
             # load a file using networkX adjacency matrix structure
-            C = loadGraph(fname)
+            C = loadGraph(fname, connected=True)
             if conf.showGraph == True:
                 showGraph(C)
             if conf.extractData == True:

@@ -1,10 +1,15 @@
+import sys 
+import time
+import copy
+import math
+
+from guppy import hpy
+import numpy as np
 import itertools as itt
 import networkx as nx
 from collections import defaultdict
 from multiprocessing import Process, Queue
-import sys 
-import time
-import copy
+from miscLibs import *
 
 def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
         shortestPathsCache = None):
@@ -24,7 +29,8 @@ def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
         in case this function has already been run, we keep a cache
         for the shortestPath dictionary, for optimization
 
-    Return : best betweenness, array of groups of nodes, shortestPaths
+    Return : best betweenness, array of groups of nodes, best closeness 
+             array of groups of nodes, shortestPaths
     """
 
 
@@ -95,6 +101,7 @@ def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
     maxLifeTime = 100000
     killed = 0
     queueStack = []
+    print "launching subprocesses"
     for i in range(parallelism):
         queueStack.append(Queue())
     while True:
@@ -142,7 +149,6 @@ def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
     print "Launched and ended", numComb, "processes"
     bestBet = sorted(solutionsBetweenness, reverse=True)[0]
     bestClos = sorted(solutionsCloseness)[0]
-
     # to have less computation it is better to compute betweenness 
     # without 1-hop routes. But to compute closeness we need all the routes.
     # If cutoff = 2 we can get the 1-hop neighbors from the graph, if cutoff>2 
@@ -176,7 +182,7 @@ def groupBetweenness(graph, group, shortestPaths, q):
             for n in neighSet:
                 if n in graph[source]:
                     if 'weight' in graph[source][n]:
-                        length = copy.copy(graph[source][n]['weight'])
+                        length = graph[source][n]['weight']
                     else:
                         length = 1
                     if length < firstMatchLength:
@@ -210,5 +216,96 @@ def groupBetweenness(graph, group, shortestPaths, q):
     q.put(solution)
 
 
+    """ find the set of nodes with the highest group betw. to gateways."""
 
 
+
+def computeBetweennessToHNA(nodeList, routes, groupSize):
+
+    print "Evaluating groupSize", groupSize
+    groupArray = [g for g in itt.combinations(nodeList, groupSize)]
+    bestBetw = 0
+    bestGroup = []
+    for group in groupArray:
+        matched = 0
+        numRoutes = 0
+        for path in zip(*routes)[0]:
+            if path[0] in group:
+                continue
+            for node in path:
+                if node in group:
+                    matched += 1
+                    break
+            numRoutes += 1
+        if len(groupArray) > 10 and groupArray.index(group) % (len(groupArray)/10) == 0:
+            print "Analyzed", groupArray.index(group)*100 / len(groupArray), "% of groups"
+                
+        if float(matched)/numRoutes > bestBetw:
+            bestBetw = float(matched)/numRoutes
+            bestGroup = group
+    return bestBetw, bestGroup
+    
+            
+
+def compressGraph(graph):
+    """ compact the gateway nodes to one single node."""
+
+    """ Each node in the graph with ID < 0 is a 0.0.0.0/0 HNA route (a gateway 
+    to the Internet). We compact them in one single node for easier analysis."""
+
+    newGraph = graph.copy()
+    if 0 in newGraph.nodes():
+        print "We use node id 0 for representing an abstract gateway node",\
+        "please do not use ID 0 in the graph definition"
+        sys.exit(1)
+    negNodes = []
+    negNeighs = []
+    for node in newGraph.nodes():
+        if node < 0:
+            negNodes.append(node)
+            for neighs in nx.neighbors(newGraph, node):
+                negNeighs.append(neighs)
+    if len(negNodes) == 0:
+        print "no gateway found for the network. Gateways are expected to ",\
+                "have an ID lower than zero"
+    newGraph.add_node(0)
+    for neigh in negNeighs:
+        newGraph.add_edge(0, neigh, weight=1)
+    for node in negNodes:
+        newGraph.remove_node(node)
+    return newGraph
+
+def computeInternetAccessStats(G, weighted=True):
+    """ compute stats for paths to internet gateways. """
+    # 0-node is the compressed node representing all gateways
+    # remove the neighbors of the 0-node, we do not care of 1-hop neighbors
+
+    nodeList = set(G.nodes())
+    nodeList = nodeList - set(nx.neighbors(G, 0)) - set([0])
+    paths = []
+    if weighted:
+        for source in nodeList:
+            p = nx.shortest_path(G, source, 0, weight='weight')
+            w = nx.shortest_path_length(G, source, 0 , weight="weight") - 1
+            paths.append([p,w])
+    else:
+        allPathGen = nx.shortest_path(G, 0)
+        for t,l in allPathGen.items():
+            if t in nodeList:
+                paths.append([l, len(l) - 1 - 1]) 
+                # one for the fake hop, one couse 
+                # path begins on source node
+    weights = zip(*paths)[1]
+    bins = []
+    for i in range(1, int(math.ceil(max(weights))) + 1 ):
+        bins.append(i)
+        bins.append(i+0.5)
+    bins.pop()
+
+    CCDF = ccdf(weights, bins=bins)
+    retValue = {}
+    retValue['ccdf'] = CCDF
+    retValue['avg'] = np.average(weights)
+    retValue['min'] = min(weights)
+    retValue['max'] = max(weights)
+    return  retValue, paths

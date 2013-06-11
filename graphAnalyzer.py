@@ -80,10 +80,10 @@ class dataObject():
         if self.HNA != {}:
             print ""
             print ""
-            print "groupSize".ljust(space), "betweenness".ljust(space)
+            print "groupSize".ljust(space), "HNAbetweenness".ljust(space)
             for k,v in self.HNA['betweenness'].items():
-                print str(k).ljust(space),  str(v[0]).ljust(space)
-                print "# most in between group, ", v[1]
+                print str(k).ljust(space),  str(v['betweenness']).ljust(space)
+                print "# most in between group, ", v['group']
             print ""
             print ""
             print "pathLength".ljust(space), "CCDF".ljust(space)
@@ -147,14 +147,12 @@ def compareShortestPaths(graph, purgedGraph, results):
     wS = zip(*weigthStats)
     relativeDiff = np.average([p[1]/p[3] for p in weigthStats])
     results['routesMatched'] =  float(matched)/totRoutes
-    #results['minDiff'] = np.average(wS[0])
     results['avgDiff'] = np.average(wS[1])
     results['maxDiff'] = max(wS[2])
     results['relAvgDiff'] = relativeDiff
     results['avgWeight'] =  np.average(wS[3])
     results['avgNumPaths'] = np.average(wS[4])
     results['maxNumPaths'] = max(wS[4])
-    #results['minNumPaths'] = min(wS[4])
     return results
 
 
@@ -163,33 +161,18 @@ def extractData(G):
     data = dataObject()
     print "Evaluating ETX metrics"
     print "Now evaluating Group metrics"
-    getGroupMetrics(G, data)
+    #getGroupMetrics(G, data)
     #data.etxStats = etxAnalysis(G)
+    HNAAnalysis(G, data)
     data.printTable()
 
-def HNAAnalysis(graph):
-
-    # TODO: 
-    #  - compute distribution of the lenght and weight of the road to 
-    #     the closest gateway (for non-gw nodes)
-    #  - compute group betweenness for groups of growing size
-    #  - computa min-cut for any node to a gateway
-    # transform the graph 
-
-    newGraph = compressGraph(graph)
-    w, pathsW = computeInternetAccessStats(newGraph, weighted=True) 
-    nw, pathsNW = computeInternetAccessStats(newGraph, weighted=False) 
-    statRes = {}
-    statRes['weighted'] = w
-    statRes['unweighted'] = nw
-    betw = {}
-    nodeList = newGraph.nodes()
-    nodeList.remove(0)
-    for groupSize in range(1,4):
-        betw[groupSize] = computeBetweennessToHNA(nodeList, pathsW, groupSize)
-    statRes['betweenness'] = betw
-    return statRes
-
+def HNAAnalysis(graph, data):
+     
+    data.HNA, paths = computeGroupHNAMetrics(graph, 1, weighted=True)
+    for i in range(2,4):
+        r,x = computeGroupHNAMetrics(graph, groupSize=i, weighted=True, 
+                shortestPathsCache=paths)
+        data.HNA['betweenness'][i] = r['betweenness'][i]
 
 def degreeAnalysis(G):
     degree = G.degree()
@@ -214,9 +197,7 @@ def etxAnalysis(G):
         connectedEtx = etx
         purgedGraph = newGraph
 
-    #etxSequence = range(10, 23)
     etxSequence = [10, 11 , 12, 13, 14, 19, 22, 40]
-    #etxSequence = range(10, int(connectedEtx*10)+1)
     results = defaultdict()
     results['connectedEtx'] = connectedEtx
     for i in etxSequence:
@@ -261,7 +242,7 @@ def getGroupMetrics(G, results):
     cache = None
     runResB = {}
     runResC = {}
-    for i in range(1,6):
+    for i in range(4,6):
         res = computeGroupMetrics(G, groupSize=i, weighted=True, 
             cutoff = 2, shortestPathsCache=cache)
         cache = res[-1]

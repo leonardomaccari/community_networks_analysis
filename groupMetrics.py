@@ -1,5 +1,4 @@
 import sys 
-import time
 import copy
 import math
 
@@ -8,7 +7,6 @@ import numpy as np
 import itertools as itt
 import networkx as nx
 from collections import defaultdict
-from multiprocessing import Process, Queue
 from miscLibs import *
 
 def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
@@ -38,6 +36,8 @@ def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
     # this could be really large. Depending on the number of times you 
     # will need this data, it is worth to compute it once and keep it
     # for further analysis.
+
+    diameter = 0
     if shortestPathsCache == None:
         if cutoff <= 0:
             print >> sys.stderr, "Error: did you set a cutoff value",\
@@ -60,6 +60,8 @@ def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
                         pathList =  [p for p in shortestPathsGen]
                     weightedPaths = []
                     for p in pathList:
+                        if weight > diameter:
+                            diameter = weight
                         weightedPaths.append({'path':p, 'weight':weight})
                     
                     shortestPaths[source][target] = weightedPaths
@@ -79,76 +81,54 @@ def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
     else:
         shortestPaths = shortestPathsCache
 
-    solutionsBetweenness = defaultdict(list)
-    solutionsCloseness = defaultdict(list)
     # remove leaf nodes, they have no centrality
     purgedGraph = []
     for node in graph.nodes():
         if graph.degree(node) > 1:
             purgedGraph.append(node)
 
-    # combinations() returns an iterable
-    groupArray = [g for g in itt.combinations(purgedGraph, groupSize)]
+    
+    # use launchParallelProcesses to parallelize the search
 
-    numComb = len(groupArray)
-    procNumber = len(groupArray)
+    parallelism = 4
+    dataObjects = []
+    for p in range(parallelism):
+        dataObj = {}
+        dataObj['input'] = {}
+        dataObj['output'] = {}
+        # free some memory
+        dataObj['input']['paths'] = shortestPaths
+        dataObj['input']['id'] = p
+        dataObj['input']['groupSize'] = groupSize
+        dataObj['input']['nodeList'] = purgedGraph
+        dataObj['input']['graph'] = graph
+        dataObj['input']['numProcessess'] = parallelism
+        dataObj['input']['diameter'] = diameter
+        dataObjects.append(dataObj)
+        # when each process deletes memory for its own group, 
+        # if we still have a reference to the dataObj object 
+        # it is not deallocated. So deallocate it (it is worth if
+        # you pass a lot of data to each process)
+        del dataObj
+    launchParallelProcesses(dataObjects, 
+            targetFunction=singleProcessGroupMetrics) 
 
-    counter = 0
-    procList = {}
-    parallelism = 8
-    # unused, if you want to kill processes after a max time, 
-    # set to smaller values
-    maxLifeTime = 100000
-    killed = 0
-    queueStack = []
-    print "launching subprocesses"
-    for i in range(parallelism):
-        queueStack.append(Queue())
-    while True:
-        aliveProc = 0
-        #time.sleep(sleepTime)
-        toBePurged = []
-        for p,v in procList.items():
-            if p.is_alive():
-                tt = time.time()
-                if tt-v[0] < maxLifeTime: 
-                    aliveProc += 1
-                else: 
-                    print "killed a process after ",\
-                        int(tt-v[0]), "seconds"
-                    p.terminate()
-                    killed += 1
-                    for proc in procList:
-                        if proc.is_alive():
-                            proc.terminate()
-                    toBePurged.append(p)
-            else:
-                sol = v[1].get()
-                queueStack.append(v[1])
-                toBePurged.append(p)
-                solutionsBetweenness[sol["betweenness"]].append(set(v[2]))
-                solutionsCloseness[sol["closeness"]].append(set(v[2]))
-
-        for proc in toBePurged:
-            del procList[proc]
-
-        if aliveProc == 0 and procNumber == 0: 
-            break
-
-        if aliveProc < parallelism and procNumber > 0:
-            group = copy.copy(groupArray[counter])
-            q = queueStack.pop()
-            p = Process(target=groupBetweenness,
-                    args=(graph, group, shortestPaths, q))
-            procList[p] = [time.time(), q, group]
-            p.start()
-            procNumber -= 1
-            counter += 1
-            if numComb > 10 and counter % (numComb/10) == 0:
-                print "Analyzed", counter*100 / numComb, "% of groups"
-    print "Launched and ended", numComb, "processes"
-    bestBet = sorted(solutionsBetweenness, reverse=True)[0]
-    bestClos = sorted(solutionsCloseness)[0]
+    bestBetw = 0
+    bestCloseness = diameter
+    bestGroupB = []
+    bestGroupC = []
+    for o in dataObjects:
+        if o['output']['betweenness'] >= bestBetw:
+            if  o['output']['betweenness'] > bestBetw:
+                bestGroupB =[]
+            bestBetw = o['output']['betweenness']
+            bestGroupB += o['output']['groupB']
+        if o['output']['closeness'] <= bestCloseness:
+            if o['output']['closeness'] < bestCloseness:
+                bestGroupC = []
+            bestCloseness = o['output']['closeness']
+            bestGroupC += o['output']['groupC']
+    
     # to have less computation it is better to compute betweenness 
     # without 1-hop routes. But to compute closeness we need all the routes.
     # If cutoff = 2 we can get the 1-hop neighbors from the graph, if cutoff>2 
@@ -156,13 +136,91 @@ def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
     if cutoff > 2:
         print >> sys.stderr, "Cutoff value larger than 2, closeness \
                 centrality has no meaning"
-        solutionsCloseness[bestClos] = []
-    return bestBet, solutionsBetweenness[bestBet], \
-            bestClos, solutionsCloseness[bestClos], shortestPaths
+        bestCloseness = 0
+        bestGroupC = []
+    return bestBetw, bestGroupB, \
+        bestCloseness, bestGroupC, shortestPaths
 
 
-def groupBetweenness(graph, group, shortestPaths, q):
+def singleProcessGroupMetrics(dataObject, q):
+    """" compute the centrality for a batch of groups. """ 
+
+    """ this function must be called from launchParallelProcesses(), the input
+    must be formatted accordingly (see the definiton). Each launched process,
+    will generate a set of groups depending on its id and evaluate each of
+    then using groupMetricForOneGroup(). Outputs are writte in a data queue
+    and collected in launchParallelProcesses"""
+
+    nodeList = dataObject['input']['nodeList']
+    groupSize = dataObject['input']['groupSize']
+    myId = dataObject['input']['id']
+    numProcessess = dataObject['input']['numProcessess']
+    graph = dataObject['input']['graph']
+    shortestPaths = dataObject['input']['paths']
+    diameter = dataObject['input']['diameter']
+
+    groupIt, myStart, myEnd = generateCombinations(nodeList, 
+            groupSize, myId, numProcessess)
+    currGroup = myStart
+    bestRes = {}
+    if myStart == myEnd:
+        bestRes['betweenness'] = 0
+        bestRes['closeness'] = diameter
+        bestRes['groupB'] = []
+        bestRes['groupC'] = []
+        dataObject['output'] = bestRes
+        print "Subprocess with empy dataset"
+        q.put(bestRes)
+        return
+    bestB = 0
+    bestC = diameter
+    bestGroupB =[]
+    bestGroupC = []
+
+    while True:
+        try:
+            group = groupIt.next()
+        except StopIteration:
+            break;
+        if myEnd-myStart > 3:
+            if ((currGroup-myStart) % ((myEnd-myStart)/3)) == 0:
+                workProgress = 100*(currGroup-myStart)/(myEnd-myStart)
+                print "Process ", myId, "elaborated", \
+                        workProgress, "% of the groups"
+        if currGroup == myEnd:
+            break
+        currGroup += 1
+        betw, clos = groupMetricForOneGroup(graph, group, shortestPaths)
+        if betw >= bestB:
+            if betw > bestB:
+                bestB = betw
+                bestGroupB = []
+            bestGroupB.append(set(group))
+        if clos <= bestC:
+            if clos < bestC:
+                bestC = clos
+                bestGroupC = []
+            bestGroupC.append(set(group))
+
+    bestRes['groupC'] = bestGroupC
+    bestRes['groupB'] = bestGroupB
+    bestRes['betweenness'] = bestB
+    bestRes['closeness'] = bestC
+    q.put(bestRes)
+
+
+def groupMetricForOneGroup(graph, group, shortestPaths):
     """ compute the group betweeness and closeness centrality."""
+
+    """ graph:  the graph
+
+        group: the group to be tested
+
+        shortestPaths: all the shortest paths in the graph (so they
+                       can be precomputed and cached)
+
+        Return: bertweenness group centrality and closeness group centrality
+    """
 
     numPathsMatched = 0.0
     numPaths = 0
@@ -198,7 +256,6 @@ def groupBetweenness(graph, group, shortestPaths, q):
                     if firstMatchLength > length:
                         firstMatchLength = length
                 continue
-            #print "xx", source, dest, shortestPaths[source][dest]
             for route in shortestPaths[source][dest]:
                 numPaths += 1
                 for node in route['path']:
@@ -207,26 +264,157 @@ def groupBetweenness(graph, group, shortestPaths, q):
                         break 
         totalPathLenght += firstMatchLength
         allPaths += 1
-        #print group, source, totalPathLenght,firstMatchLength ,  allPaths, \
-        #        totalPathLenght/float(allPaths)
     betweennessValue = float(numPathsMatched)/numPaths
     closenessValue = float(totalPathLenght)/allPaths
-    solution = {"betweenness":betweennessValue, 
-            "closeness":closenessValue}
-    q.put(solution)
-
-
-    """ find the set of nodes with the highest group betw. to gateways."""
+    return betweennessValue, closenessValue
 
 
 
-def computeBetweennessToHNA(nodeList, routes, groupSize):
+def generateCombinations(nodeList, groupSize, myId, numProcessess):
+    """ returns an iterator with all the combinations of size groupSize. """
 
+    """ 
+        nodeList: the set of nodes to combine
+
+        groupSize: the dimension of the group
+
+        myId: return the iterator in the correct position to be used by
+              the myId-esim process over a total of numProcesses (see below)
+
+        Return: iterator over the combinations, start and end for this process
+    """
+    groupIt = itt.combinations(nodeList, groupSize)
+    combinations = math.factorial(len(nodeList))/\
+                   (math.factorial(groupSize)*\
+                   math.factorial(len(nodeList)-groupSize)) 
+    
+    # if you have N combinations, m processes and myId = x then 
+    # this function will return an iterator to all the combinations
+    # that points to the element (N/m)*x, together with the start and end value
+    # for this process
+
+    if combinations > numProcessess:
+        blockSize = combinations/numProcessess
+    else:
+        blockSize = 1
+    myStart = myId*blockSize
+    if myId != numProcessess-1 and myStart < combinations:
+        myEnd = (myId+1)*blockSize
+    elif myStart < combinations:
+        myEnd = combinations
+    else:
+        myEnd = 0
+        myStart = 0
+
+    for i in range(myStart):
+        groupIt.next()
+    return groupIt, myStart, myEnd
+
+def computeGroupHNAMetrics(graph, groupSize=1, weighted=False,
+        shortestPathsCache = None):
+
+    # TODO: 
+    #  - computa min-cut for any node to a gateway
+
+    newGraph = compressGraph(graph)
+    statRes = {}
+    if shortestPathsCache == None:
+        if weighted == False:
+            nw, shortestPathsCache  = computeInternetAccessStats(newGraph, weighted=False) 
+            statRes['unweighted'] = nw
+        else:
+            w, shortestPathsCache = computeInternetAccessStats(newGraph, weighted=True) 
+            statRes['weighted'] = w
+    nodeList = newGraph.nodes()
+    # remove the leaves from the groups
+    for n in newGraph.nodes():
+        if len(nx.neighbors(newGraph, n)) == 1:
+            nodeList.remove(n)
+
+    # remove the gateway from the groups
+    if 0 in nodeList:
+        nodeList.remove(0)
+
+    # TODO set this somewhere global
+    parallelism = 4
+    results = {}
+    results[groupSize] = {}
     print "Evaluating groupSize", groupSize
-    groupArray = [g for g in itt.combinations(nodeList, groupSize)]
+    dataObjects = []
+    for p in range(parallelism):
+        dataObj = {}
+        dataObj['input'] = {}
+        dataObj['output'] = {}
+        dataObj['input']['paths'] =shortestPathsCache 
+        dataObj['input']['nodeList'] = nodeList
+        dataObj['input']['id'] = p
+        dataObj['input']['numProcessess'] = parallelism
+        dataObj['input']['groupSize'] = groupSize
+        dataObjects.append(dataObj)
+        # when each process deletes memory for its own group, 
+        # if we still have a reference to the dataObj object 
+        # it is not deallocated. So deallocate it
+        del dataObj
+
+    launchParallelProcesses(dataObjects, 
+            targetFunction=computeBetweennessToHNA) 
+    
     bestBetw = 0
     bestGroup = []
-    for group in groupArray:
+    for o in dataObjects:
+        if o['output']['betweenness'] >= bestBetw:
+            bestBetw = o['output']['betweenness']
+            bestGroup = o['output']['group']
+    results[groupSize] = {'betweenness':bestBetw, 'group':bestGroup}
+    statRes['betweenness'] = results
+    return statRes, shortestPathsCache
+
+
+def computeBetweennessToHNA(dataObject, q):
+    """ find the set of nodes with the highest group betw. to gateways."""
+    
+    """ this function must be called from launchParallelProcesses(), the input
+    must be formatted accordingly (see the definiton). Each launched process,
+    will generate a set of groups depending on its id and evaluate each of
+    then using groupMetricForOneGroup(). Outputs are written in a data queue
+    and collected in launchParallelProcesses"""
+
+    # HNA entries are compressed in a single node with ID 0
+
+    bestBetw = 0
+    bestGroup = []
+    routes =  dataObject['input']['paths']
+    nodeList = dataObject['input']['nodeList']
+    myId = dataObject['input']['id']
+    numProcessess = dataObject['input']['numProcessess']
+    groupSize = dataObject['input']['groupSize']
+
+    groupIt, myStart, myEnd = generateCombinations(nodeList, groupSize, myId,
+            numProcessess)
+    currGroup = myStart
+    bestRes = {}
+
+    if myStart == myEnd:
+        bestRes['betweenness'] = 0
+        bestRes['group'] = []
+        dataObject['output'] = bestRes
+        print "Subprocess with empy dataset"
+        q.put(bestRes)
+        return
+    
+    while True:
+        try:
+            group = groupIt.next()
+        except StopIteration:
+            break;
+        if myStart - myEnd > 3:
+            if ((currGroup-myStart) % ((myEnd-myStart)/3)) == 0:
+                workProgress = 100*(currGroup-myStart)/(myEnd-myStart)
+                print "Process ", myId, "elaborated", \
+                        workProgress, "% of the groups"
+        if currGroup == myEnd:
+            break
+        currGroup += 1
         matched = 0
         numRoutes = 0
         for path in zip(*routes)[0]:
@@ -237,14 +425,14 @@ def computeBetweennessToHNA(nodeList, routes, groupSize):
                     matched += 1
                     break
             numRoutes += 1
-        if len(groupArray) > 10 and groupArray.index(group) % (len(groupArray)/10) == 0:
-            print "Analyzed", groupArray.index(group)*100 / len(groupArray), "% of groups"
-                
         if float(matched)/numRoutes > bestBetw:
             bestBetw = float(matched)/numRoutes
             bestGroup = group
-    return bestBetw, bestGroup
-    
+    #free some memory
+    bestRes['betweenness'] = bestBetw
+    bestRes['group'] = bestGroup
+    dataObject['output'] = bestRes
+    q.put(bestRes)
             
 
 def compressGraph(graph):
@@ -273,13 +461,20 @@ def compressGraph(graph):
         newGraph.add_edge(0, neigh, weight=1)
     for node in negNodes:
         newGraph.remove_node(node)
+
     return newGraph
 
 def computeInternetAccessStats(G, weighted=True):
-    """ compute stats for paths to internet gateways. """
+    """ compute stats for path length to internet gateways. """
+    """ 
+        G: graph
+
+        weighted: use/don't use weights
+
+        returns: dict with some stats and the shortest paths computed
+    """
     # 0-node is the compressed node representing all gateways
     # remove the neighbors of the 0-node, we do not care of 1-hop neighbors
-
     nodeList = set(G.nodes())
     nodeList = nodeList - set(nx.neighbors(G, 0)) - set([0])
     paths = []
@@ -289,12 +484,13 @@ def computeInternetAccessStats(G, weighted=True):
             w = nx.shortest_path_length(G, source, 0 , weight="weight") - 1
             paths.append([p,w])
     else:
-        allPathGen = nx.shortest_path(G, 0)
-        for t,l in allPathGen.items():
-            if t in nodeList:
-                paths.append([l, len(l) - 1 - 1]) 
+        for source in nodeList:
+            pt = nx.all_shortest_paths(G, source, 0)
+            for p in pt:
+                paths.append([p, len(p) -2]) 
                 # one for the fake hop, one couse 
                 # path begins on source node
+
     weights = zip(*paths)[1]
     bins = []
     for i in range(1, int(math.ceil(max(weights))) + 1 ):

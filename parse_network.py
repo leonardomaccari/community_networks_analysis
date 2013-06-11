@@ -84,7 +84,6 @@ def testRun():
     betw, solB, clos, solC, s = computeGroupMetrics(L, 1, weighted = False, 
             cutoff = 2)
     ok = True
-
     if solB[0] != set([1]) or betw != 1:
         print >> sys.stderr , " ERROR: computeGroupMetrics is giving",\
             "wrong betweenness on the 3-nodes line network: ", solB[0], betw
@@ -155,6 +154,34 @@ def testRun():
             "wrong closeness on the 9-nodes mesh weigthed network: ", \
             solC[0], str(clos)[0:4]
         ok = False
+    
+    M = genGraph("MESH", 9)
+    M.remove_node(0)
+    M.add_node(-1)
+    M.add_edge(-1, 1)
+    M.add_edge(-1, 3)
+    M.add_edge(-1, 4)
+
+    r1,s = computeGroupHNAMetrics(M, groupSize=1, weighted=False)
+    r3,s = computeGroupHNAMetrics(M, groupSize=3, weighted=False)
+    if set(r1['betweenness'][1]['group']) != set([4]) or \
+            str(r1['betweenness'][1]['betweenness'])[0:4] != "0.55":
+        print >> sys.stderr , " ERROR: computeGroupHNAMetrics is giving",\
+            "wrong closeness on the 9-nodes mesh with groupSize 1", \
+            r1['betweenness'][1]['group'], \
+            str(r1['betweenness'][1]['betweenness'])[0:4]
+
+        ok = False
+    if set(r3['betweenness'][3]['group'])  !=  set([1,3,4]) or \
+            str(r3['betweenness'][3]['betweenness'])[0:3] != "1.0":
+        print >> sys.stderr , " ERROR: computeGroupHNAMetrics is giving",\
+            "wrong closeness on the 9-nodes mesh with groupSize 3",\
+            r1['betweenness'][3]['group'], \
+            str(r3['betweenness'][3]['betweenness'])[0:3]
+        ok = False
+
+
+    #if r1['betweenness'][1][]
 
     if not ok:
         sys.exit(1)

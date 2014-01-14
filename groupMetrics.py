@@ -1,20 +1,20 @@
 import sys 
-import copy
 import math
+import time
 
-from guppy import hpy
 import numpy as np
 import itertools as itt
 import networkx as nx
 from collections import defaultdict
 from miscLibs import *
+from scipy import stats
 
 def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
-        shortestPathsCache = None):
+        shortestPathsCache = None, mode="exhaustive"):
     """ find the set of nodes of with highest group betweenness.  
     
     Use weighted/nonweighted graphs and consider paths
-    longer than cutoff. It uses multi-process to speed-up analysis
+    >= than cutoff. It uses multi-process to speed-up analysis
 
     Parameters
     --------------
@@ -26,7 +26,9 @@ def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
     shortestPathsCache: defaultdict(defaultdict())
         in case this function has already been run, we keep a cache
         for the shortestPath dictionary, for optimization
-
+    mode : string
+        this can be "exhaustive", "greedy" and determines the kind of
+        search that must be done
     Return : best betweenness, array of groups of nodes, best closeness 
              array of groups of nodes, shortestPaths
     """
@@ -37,13 +39,8 @@ def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
     # will need this data, it is worth to compute it once and keep it
     # for further analysis.
 
-    diameter = 0
+    diameter = 10000 # just a very long path weight
     if shortestPathsCache == None:
-        if cutoff <= 0:
-            print >> sys.stderr, "Error: did you set a cutoff value",\
-                "lower than 1?"
-            sys.exit(1)
-
         shortestPaths = defaultdict(defaultdict)
         for source in graph.nodes():
                 for target in graph.nodes():
@@ -60,23 +57,9 @@ def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
                         pathList =  [p for p in shortestPathsGen]
                     weightedPaths = []
                     for p in pathList:
-                        if weight > diameter:
-                            diameter = weight
                         weightedPaths.append({'path':p, 'weight':weight})
                     
                     shortestPaths[source][target] = weightedPaths
-                    tooShortPaths = []
-                    if cutoff > 1:
-                        for route in shortestPaths[source][target]:
-                            routeL = len(route['path'])
-                            # recall that len(route) counts the end nodes
-                            # so len(path(0,1)) = len([0,1]) = 2
-                            if routeL <= cutoff:
-                                tooShortPaths.append(target)
-                                break
-                    
-                    for dest in tooShortPaths:
-                        del shortestPaths[source][dest] 
 
     else:
         shortestPaths = shortestPathsCache
@@ -110,25 +93,14 @@ def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
         # it is not deallocated. So deallocate it (it is worth if
         # you pass a lot of data to each process)
         del dataObj
-    launchParallelProcesses(dataObjects, 
-            targetFunction=singleProcessGroupMetrics) 
 
-    bestBetw = 0
-    bestCloseness = diameter
-    bestGroupB = []
-    bestGroupC = []
-    for o in dataObjects:
-        if o['output']['betweenness'] >= bestBetw:
-            if  o['output']['betweenness'] > bestBetw:
-                bestGroupB =[]
-            bestBetw = o['output']['betweenness']
-            bestGroupB += o['output']['groupB']
-        if o['output']['closeness'] <= bestCloseness:
-            if o['output']['closeness'] < bestCloseness:
-                bestGroupC = []
-            bestCloseness = o['output']['closeness']
-            bestGroupC += o['output']['groupC']
-    
+    if mode == "exhaustive":
+        launchParallelProcesses(dataObjects, 
+                targetFunction=singleProcessGroupMetrics) 
+    if mode == "greedy":
+        launchParallelProcesses(dataObjects, 
+                targetFunction=greedyGroupBetweenness) 
+
     # to have less computation it is better to compute betweenness 
     # without 1-hop routes. But to compute closeness we need all the routes.
     # If cutoff = 2 we can get the 1-hop neighbors from the graph, if cutoff>2 
@@ -136,11 +108,202 @@ def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
     if cutoff > 2:
         print >> sys.stderr, "Cutoff value larger than 2, closeness \
                 centrality has no meaning"
-        bestCloseness = 0
-        bestGroupC = []
-    return bestBetw, bestGroupB, \
-        bestCloseness, bestGroupC, shortestPaths
+    # add shortestPaths to the orginal tuple as return value
+    return parseGroupMetricResults(dataObjects, mode) + (shortestPaths,)
 
+def parseGroupMetricResults(dataObjects, mode):
+    """ parse the results of a parallel computation and returns 
+        the values.
+
+        Parameters
+        ----------
+        dataObjects : retudn value from the parallel execution
+        mode : exhaustive/greedy, it is needed since the two modes return
+        different values
+        
+        Returns : best Betweenness, best corresponding group , 
+                    best Closeness, best corresponding group
+                    in case of greedy behaviour it returns an array of each
+                    result with the results from 1 to groupSize
+    """
+
+    bestBetw = {}
+    bestGroupB = {}
+    bestGroupC = {}
+    bestCloseness = {}
+    # dataObjects is as follows:
+    #   an array of dataObj one for process, each one is a dict with
+    #   ['input'] / ['output'] labels
+    #     label 'input' contains a dict with input parameter
+    #     label 'output' contains a dict of solutions, one for each group 
+    #     size  each element in the list contains a piece of the solution 
+    #
+    # so dataObject[0]['output'][5]['betweenness'] is the betweenness 
+    # computed by process 0 on the group size 5. 
+
+    # Note that each process computes a solution with a different input or 
+    # with a different random seed, and only the greedy algorith returns a
+    # dict of sizes, the exhaustive returns only the solution for the size 
+    # you requested
+
+    for j in dataObjects[0]['output']: # loop on the sol size (1..groupSize)
+        bestGroupB[j] = []
+        bestGroupC[j] = []
+        bestCloseness[j] = dataObjects[0]['input']['diameter']
+        bestBetw[j] = 0
+        for o in dataObjects: #loop on the solution produced by each prcess
+            groupSize = o['input']['groupSize']
+            if j in o['output']:
+                if o['output'][j]['betweenness'] >= bestBetw[j]:
+                    if  o['output'][j]['betweenness'] > bestBetw[j]:
+                        bestGroupB[j] =[]
+                    bestBetw[j] = o['output'][j]['betweenness']
+                    if o['output'][j]['groupB'] not in bestGroupB[j]:
+                        bestGroupB[j].append(o['output'][j]['groupB'])
+                if o['output'][j]['closeness'] <= bestCloseness[j]:
+                    if o['output'][j]['closeness'] < bestCloseness[j]:
+                        bestGroupC[j] = []
+                    bestCloseness[j] = o['output'][j]['closeness']
+                    if o['output'][j]['groupC'] not in bestGroupC[j]:
+                        bestGroupC[j].append(o['output'][j]['groupC'])
+
+    if mode == "greedy":
+        return bestBetw, bestGroupB, \
+                bestCloseness, bestGroupC
+    else:
+        return bestBetw[groupSize], bestGroupB[groupSize], \
+                bestCloseness[groupSize], bestGroupC[groupSize]
+
+def greedyGroupBetweenness(dataObject, q):
+    """ compute the shortest path betweenness (weighted) using the greedy 
+    heuristic from a BU techrep: "A Framework for the Evaluation and 
+    Management of Network Centrality", modified to be a grasp procedure:
+    http://en.wikipedia.org/wiki/Greedy_randomized_adaptive_search_procedure
+
+    This function must be called from launchParallelProcesses(), the input
+    must be formatted accordingly (see the definiton). 
+    
+    At each step you have a current group of nodes g, a betweenness B(g)
+    and a set of candidates made of [G.nodes()] - [g]. For each candidate x
+    compute B(g+x) and build a map Inc[x] = B(g+x) - B(g). Then the process
+    with id == 0 always chooses the x with maximum Inc[x]. The others choose 
+    a random x with probability proportional to Inc[x].  At the end, the best
+    one is chosen.
+    Betweenness and Closeness vary a little in the computation but the principle 
+    is the same.
+
+    Parameters
+    ---------
+
+    dataObject : input and output values
+    q : output queue
+    """
+
+    nodeList = dataObject['input']['nodeList']
+    groupSize = dataObject['input']['groupSize']
+    myId = dataObject['input']['id']
+    graph = dataObject['input']['graph']
+    shortestPaths = dataObject['input']['paths']
+    nodeSet = set(nodeList)
+    currentBGroup = set()
+    currentCGroup = set()
+    bestRes = {}
+    # initialize with out of scale values
+    bestB = 0 
+    bestC = 100
+    # these two dict are needed since 
+    # the random generator uses floats 
+    # as labels, not strings
+    nodeToFloat = {}
+    floatToNode = {}
+    counter = 0
+    for n in graph.nodes():
+        nodeToFloat[n] = counter
+        floatToNode[counter] = n
+        counter += 1
+
+    for i in range(1,groupSize+1):
+        bestRes[i] = {}
+        candidatesB = nodeSet - currentBGroup
+        candidatesC = nodeSet - currentCGroup
+        Bdict = {}
+        Cdict = {}
+        # I try to use one loop for both metrics
+        for n in candidatesB|candidatesC:
+            newG = currentBGroup|set([n])
+            betw, cl = groupMetricForOneGroup(graph, newG, shortestPaths)
+            # save for each candidate group the increment Vs the 
+            # current solution
+            Bdict[nodeToFloat[n]] = betw - bestB
+
+            # closeness can be not monotinc with len(newG). See comments in
+            # groupMetricForOneGroup(). Shoul be unneeded but I keep it 
+            # for reference
+            if bestC > cl: 
+                Cdict[nodeToFloat[n]] = bestC - cl
+
+        # to have only one loop I may add nodes already in the current solution
+        for n in currentBGroup:
+            try: 
+                del Bdict[nodeToFloat[n]]
+            except KeyError:
+                pass
+        for n in currentCGroup:
+            try: 
+                del Cdict[nodeToFloat[n]]
+            except KeyError:
+                pass
+
+        if myId == 0:
+            # one process deterministically chooses the best solution.
+            # Recall we want the highest betweenness and the lowest closeness
+            if len(Bdict) != 0:
+                f = sorted(Bdict.items(), key=lambda x: x[1],
+                        reverse=True)[myId]
+                currentBGroup.add(floatToNode[f[0]]) 
+                bestB = bestB + f[1]
+            if len(Cdict) != 0:
+                f = sorted(Cdict.items(), key=lambda x: x[1],
+                        reverse=True)[myId]
+                currentCGroup.add(floatToNode[f[0]])
+                bestC = bestC - f[1]
+        else:
+            # every element has a probability of being chosen that 
+            # is proportional to the normalized gain of the target
+            # function for that choice
+            # this is a grasp optimization method, the more processes
+            # are run in parallel the higher the chance of finding 
+            # a better solution
+            np.random.seed(myId*int(time.time()))
+            if len(Bdict) != 0:
+                totIncrement = sum(Bdict.values())
+                normalizedIncrement = [k/totIncrement for k in Bdict.values()]
+                # stats only handles integer labels, that's the reason for 
+                # dummy floatToNode[] and nodeToFloat[]
+                custDist = stats.rv_discrete(values=(Bdict.keys(), 
+                    normalizedIncrement))
+                r = custDist.rvs()
+                f = floatToNode[r]
+                currentBGroup.add(f)
+                bestB = bestB + Bdict[r]
+
+            if len(Cdict) != 0:
+                totIncrement = sum(Cdict.values())
+                normalizedIncrement = [k/totIncrement for k in Cdict.values()]
+                custDist = stats.rv_discrete(values=(Cdict.keys(), 
+                    normalizedIncrement))
+
+                r = custDist.rvs()
+                f = floatToNode[r]
+                currentCGroup.add(f)
+                bestC = bestC - Cdict[r]
+
+
+        bestRes[i]['groupC'] = currentCGroup
+        bestRes[i]['groupB'] = currentBGroup
+        bestRes[i]['betweenness'] = bestB
+        bestRes[i]['closeness'] = bestC
+    q.put(bestRes)
 
 def singleProcessGroupMetrics(dataObject, q):
     """" compute the centrality for a batch of groups. """ 
@@ -202,10 +365,15 @@ def singleProcessGroupMetrics(dataObject, q):
                 bestGroupC = []
             bestGroupC.append(set(group))
 
-    bestRes['groupC'] = bestGroupC
-    bestRes['groupB'] = bestGroupB
-    bestRes['betweenness'] = bestB
-    bestRes['closeness'] = bestC
+    # with the echaustive algorithm, bestRes is a simple dictionary, it
+    # should not need to be an array of dictionaries. I use an array 
+    # for compatibility with the greedy approach
+
+    bestRes[groupSize] = {}
+    bestRes[groupSize]['groupC'] = bestGroupC
+    bestRes[groupSize]['groupB'] = bestGroupB
+    bestRes[groupSize]['betweenness'] = bestB
+    bestRes[groupSize]['closeness'] = bestC
     q.put(bestRes)
 
 
@@ -222,50 +390,64 @@ def groupMetricForOneGroup(graph, group, shortestPaths):
         Return: bertweenness group centrality and closeness group centrality
     """
 
+    # paths that have been matched by any node in the group (betweenness)
     numPathsMatched = 0.0
+    # total number of paths, excluding the ones stardint from one of the nodes
+    # in the group (Note, there can be more than one shortest path 
+    # between every (source,dest))
     numPaths = 0
+    # sum variable of the minimum distance to any of the nodes in the group
     totalPathLenght = 0
-    allPaths = 0
+    # upper bound to closeness
     MAX_PATH_WEIGHT = 10000 
     for source in shortestPaths:
+        # if source is in the group, his minimum distance from 
+        # the group is 0. This keeps the closeness monotonic with
+        # the number of nodes in the group.
+        # Otherwise, closeness is not monotonic with the number of elements in
+        # the group. Consider the line:
+        # 
+        # 1 --  2 -- 3 -- 4
+        #
+        # g = [2] has closeness 1+1+2/3 = 4/3;  g = [2,1] has closeness 1+2/2 =
+        # 3/2 > 4/3
+        m = 0
+        tot = 0
+
         if source in group:
-            continue
-        firstMatchLength = MAX_PATH_WEIGHT
-        neighSet = set(nx.neighbors(graph,source)) & set(group)
-        firstMatchLength = MAX_PATH_WEIGHT
-        # 1) a node in group is neighbor of source
-        if neighSet != set():
-            # if cutoff > 1 we miss 1-hop routes, so get the neighbors
-            # from the graph
-            for n in neighSet:
-                if n in graph[source]:
-                    if 'weight' in graph[source][n]:
-                        length = graph[source][n]['weight']
-                    else:
-                        length = 1
-                    if length < firstMatchLength:
-                        firstMatchLength = length
-        for dest in shortestPaths[source]:
-            # 2) dest is in group (even if case 1) is true, we may have
-            # shortest paths when weight != 1)
-            #   - update the closeness centrality
-            #   - skip the betweenness (we omit the case "dest is in group")
-            if dest in group:
-                if shortestPaths[source][dest] != []:
-                    length = shortestPaths[source][dest][0]['weight']
-                    if firstMatchLength > length:
-                        firstMatchLength = length
+            firstMatchLength = 0
+        else:
+            firstMatchLength = MAX_PATH_WEIGHT
+
+        for dest in shortestPaths[source]: 
+            if dest == source:
                 continue
-            for route in shortestPaths[source][dest]:
+            # compute closeness centrality (for nodes that are 
+            # not in the group that have distance = 0)
+            if dest in group and firstMatchLength != 0: 
+                    if shortestPaths[source][dest] != []:
+                     length = shortestPaths[source][dest][0]['weight']
+                     if firstMatchLength > length:
+                            firstMatchLength = length
+            # loop on all the routes between source and dest
+            # compute betweenness
+            for route in shortestPaths[source][dest]: 
+                #print "XX", source, shortestPaths[source]
+                tot += 1
                 numPaths += 1
-                for node in route['path']:
+                # loop on the nodes of this route
+                for node in route['path']: 
                     if node in group:
                         numPathsMatched += 1
-                        break 
+                        m += 1
+                        break # exit from this route
         totalPathLenght += firstMatchLength
-        allPaths += 1
+        if firstMatchLength == MAX_PATH_WEIGHT:
+            print >> sys.stderr,  "Error: node", source,\
+                 " has no route to any node in ", group 
+            sys.exit(1)
     betweennessValue = float(numPathsMatched)/numPaths
-    closenessValue = float(totalPathLenght)/allPaths
+    closenessValue = float(totalPathLenght)/len(shortestPaths)
     return betweennessValue, closenessValue
 
 

@@ -42,8 +42,11 @@ def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
     diameter = 10000 # just a very long path weight
     if shortestPathsCache == None:
         shortestPaths = defaultdict(defaultdict)
+        print "initializing shortespathcache", datetime.now()
         for source in graph.nodes():
                 for target in graph.nodes():
+                    if target in shortestPaths[source]:
+                        continue
                     if not weighted:
                         shortestPathsGen = nx.all_shortest_paths(graph,
                             source, target)
@@ -59,10 +62,14 @@ def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
                     for p in pathList:
                         weightedPaths.append({'path':p, 'weight':weight})
                     
+                    # we consider only symmetric links (non directed 
+                    # graphs)
                     shortestPaths[source][target] = weightedPaths
+                    shortestPaths[target][source] = weightedPaths
 
     else:
         shortestPaths = shortestPathsCache
+    print "ok with initializing shortespathcache", datetime.now()
 
     # remove leaf nodes, they have no centrality
     purgedGraph = []
@@ -146,26 +153,23 @@ def parseGroupMetricResults(dataObjects, mode):
     # dict of sizes, the exhaustive returns only the solution for the size 
     # you requested
 
+    # note, we return only one solution among the possible ones. This has no real
+    # impact in weighted graphs, in which the solution is most likely just 
+    # one, but it may change in unweighted graphs
     for j in dataObjects[0]['output']: # loop on the sol size (1..groupSize)
         bestGroupB[j] = []
         bestGroupC[j] = []
         bestCloseness[j] = dataObjects[0]['input']['diameter']
         bestBetw[j] = 0
-        for o in dataObjects: #loop on the solution produced by each prcess
+        for o in dataObjects: #loop on the solution produced by each process
             groupSize = o['input']['groupSize']
             if j in o['output']:
-                if o['output'][j]['betweenness'] >= bestBetw[j]:
-                    if  o['output'][j]['betweenness'] > bestBetw[j]:
-                        bestGroupB[j] =[]
+                if o['output'][j]['betweenness'] > bestBetw[j]:
+                    bestGroupB[j] = o['output'][j]['groupB']
                     bestBetw[j] = o['output'][j]['betweenness']
-                    if o['output'][j]['groupB'] not in bestGroupB[j]:
-                        bestGroupB[j].append(o['output'][j]['groupB'])
-                if o['output'][j]['closeness'] <= bestCloseness[j]:
-                    if o['output'][j]['closeness'] < bestCloseness[j]:
-                        bestGroupC[j] = []
+                if o['output'][j]['closeness'] < bestCloseness[j]:
+                    bestGroupC[j] = o['output'][j]['groupC']
                     bestCloseness[j] = o['output'][j]['closeness']
-                    if o['output'][j]['groupC'] not in bestGroupC[j]:
-                        bestGroupC[j].append(o['output'][j]['groupC'])
 
     if mode == "greedy":
         return bestBetw, bestGroupB, \
@@ -299,8 +303,8 @@ def greedyGroupBetweenness(dataObject, q):
                 bestC = bestC - Cdict[r]
 
 
-        bestRes[i]['groupC'] = currentCGroup
-        bestRes[i]['groupB'] = currentBGroup
+        bestRes[i]['groupC'] = [n for n in currentCGroup]
+        bestRes[i]['groupB'] = [n for n in currentBGroup]
         bestRes[i]['betweenness'] = bestB
         bestRes[i]['closeness'] = bestC
     q.put(bestRes)
@@ -432,7 +436,6 @@ def groupMetricForOneGroup(graph, group, shortestPaths):
             # loop on all the routes between source and dest
             # compute betweenness
             for route in shortestPaths[source][dest]: 
-                #print "XX", source, shortestPaths[source]
                 tot += 1
                 numPaths += 1
                 # loop on the nodes of this route
@@ -446,8 +449,12 @@ def groupMetricForOneGroup(graph, group, shortestPaths):
             print >> sys.stderr,  "Error: node", source,\
                  " has no route to any node in ", group 
             sys.exit(1)
-    betweennessValue = float(numPathsMatched)/numPaths
-    closenessValue = float(totalPathLenght)/len(shortestPaths)
+    if numPaths == 0 or len(shortestPaths) == 0:
+        print >> sys.stderr, "ERROR: ", len(shortestPaths)
+        return 0,0
+    else:
+        betweennessValue = float(numPathsMatched)/numPaths
+        closenessValue = float(totalPathLenght)/len(shortestPaths)
     return betweennessValue, closenessValue
 
 

@@ -42,7 +42,6 @@ def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
     diameter = 10000 # just a very long path weight
     if shortestPathsCache == None:
         shortestPaths = defaultdict(defaultdict)
-        print "initializing shortespathcache", datetime.now()
         for source in graph.nodes():
                 for target in graph.nodes():
                     if target in shortestPaths[source]:
@@ -69,7 +68,6 @@ def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
 
     else:
         shortestPaths = shortestPathsCache
-    print "ok with initializing shortespathcache", datetime.now()
 
     # remove leaf nodes, they have no centrality
     purgedGraph = []

@@ -63,6 +63,10 @@ This version adds two features and refactors some code:
  - I have refactored the multi-process code to be easier to 
    use for generic purposes. 
    
+This version of the code has been developed with the contribution
+of Luca Baldesi and Prof. Renato Lo Cigno, from the DISI, University 
+of Trento. Their support has been partially funded by EIT ICTLabs
+Activity 12180 'Smart Ubiquitous Content' 
 
 ============= License 
 

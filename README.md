@@ -11,7 +11,6 @@ scale on larger sizes.
 
 
 
-
 This scripts relies on networkX library, currently tested on 1.6.2.
 
 usage:
@@ -36,8 +35,34 @@ files:
                     of its current functions will be improved and moved
                     into libraries.
 - smalldata/tests.edges: a fragment of the ninux.org topology
-- 
+ 
 
+
+BugFixes and Updates:
+
+============= Version 0.1 : January 2014
+
+This version adds two features and refactors some code:
+ - Now the centrality to the HNA gateways can be computed. This is 
+   important if one wants to identify the nodes that have a high
+   betweenness considering only the routes to a gateway. It gives
+   a measure of how robust the network is to interception of traffic
+   when it is used as an access network to reach the Internet
+ - A new group centrality algorithm has been added. The previous 
+   algorithm checks the centrality of every group of nodes of size
+   k. The number of the groups of size k scales approximately ~ as N!
+   in a network of size N, which is not manageable for large networks.
+   The new algorithm is based on a greedy algorithm published in 
+   http://www.cs.bu.edu/fac/best/res/papers/sdm12.pdf
+   that I have modified implementing a simple GRASP variation (see 
+   http://en.wikipedia.org/wiki/Greedy_randomized_adaptive_search_procedure)
+   Now the solution may not be a global optimum but the code can handle 
+   networks of 250 nodes with groups up to 5 nodes in less than one 
+   minute on COTS hardware. More on this algorithm will be detailed
+   in future publications
+ - I have refactored the multi-process code to be easier to 
+   use for generic purpuses. 
+   
 
 ============= License 
 

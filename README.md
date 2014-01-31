@@ -61,7 +61,7 @@ This version adds two features and refactors some code:
    minute on COTS hardware. More on this algorithm will be detailed
    in future publications
  - I have refactored the multi-process code to be easier to 
-   use for generic purpuses. 
+   use for generic purposes. 
    
 
 ============= License 

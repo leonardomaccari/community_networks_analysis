@@ -78,7 +78,7 @@ def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
     
     # use launchParallelProcesses to parallelize the search
 
-    parallelism = 4
+    parallelism = 2
     dataObjects = []
     for p in range(parallelism):
         dataObj = {}
@@ -230,31 +230,23 @@ def greedyGroupBetweenness(dataObject, q):
         candidatesC = nodeSet - currentCGroup
         Bdict = {}
         Cdict = {}
-        # I try to use one loop for both metrics
-        for n in candidatesB|candidatesC:
+        for n in candidatesB:
             newG = currentBGroup|set([n])
             betw, cl = groupMetricForOneGroup(graph, newG, shortestPaths)
             # save for each candidate group the increment Vs the 
             # current solution
+
+            # this must be a positive increment, for both metrics
             Bdict[nodeToFloat[n]] = betw - bestB
 
+        for n in candidatesC:
+            newG = currentCGroup|set([n])
+            betw, cl = groupMetricForOneGroup(graph, newG, shortestPaths)
             # closeness can be not monotinc with len(newG). See comments in
             # groupMetricForOneGroup(). Shoul be unneeded but I keep it 
             # for reference
             if bestC > cl: 
                 Cdict[nodeToFloat[n]] = bestC - cl
-
-        # to have only one loop I may add nodes already in the current solution
-        for n in currentBGroup:
-            try: 
-                del Bdict[nodeToFloat[n]]
-            except KeyError:
-                pass
-        for n in currentCGroup:
-            try: 
-                del Cdict[nodeToFloat[n]]
-            except KeyError:
-                pass
 
         if myId == 0:
             # one process deterministically chooses the best solution.
@@ -265,6 +257,7 @@ def greedyGroupBetweenness(dataObject, q):
                 currentBGroup.add(floatToNode[f[0]]) 
                 bestB = bestB + f[1]
             if len(Cdict) != 0:
+                # order the increments from the larges to the smallest
                 f = sorted(Cdict.items(), key=lambda x: x[1],
                         reverse=True)[myId]
                 currentCGroup.add(floatToNode[f[0]])

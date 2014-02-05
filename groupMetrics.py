@@ -283,7 +283,7 @@ def greedyGroupBetweenness(dataObject, q):
                 # stats only handles integer labels, that's the reason for 
                 # dummy floatToNode[] and nodeToFloat[]
                 custDist = stats.rv_discrete(values=(Bdict.keys(), 
-                    normalizedIncrement))
+                    normalizedIncrement), name="custDist")
                 r = custDist.rvs()
                 f = floatToNode[r]
                 currentBGroup.add(f)
@@ -293,7 +293,7 @@ def greedyGroupBetweenness(dataObject, q):
                 totIncrement = sum(Cdict.values())
                 normalizedIncrement = [k/totIncrement for k in Cdict.values()]
                 custDist = stats.rv_discrete(values=(Cdict.keys(), 
-                    normalizedIncrement))
+                    normalizedIncrement), name="custDist")
 
                 r = custDist.rvs()
                 f = floatToNode[r]

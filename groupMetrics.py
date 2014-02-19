@@ -78,7 +78,7 @@ def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
     
     # use launchParallelProcesses to parallelize the search
 
-    parallelism = 2
+    parallelism = 4
     dataObjects = []
     for p in range(parallelism):
         dataObj = {}
@@ -154,20 +154,55 @@ def parseGroupMetricResults(dataObjects, mode):
     # note, we return only one solution among the possible ones. This has no real
     # impact in weighted graphs, in which the solution is most likely just 
     # one, but it may change in unweighted graphs
+
+    # Collecting stats about the GRASP implementation of the greedy
+    # algorithm
+    algorithmStats = defaultdict(dict)
+    greedySolutionLoss = defaultdict(list)
     for j in dataObjects[0]['output']: # loop on the sol size (1..groupSize)
+        # best solution found by greedy algorithm (the process with Id 0
+        # always follows the best gradient)
+        algorithmStats[j][0] = 0
+        # best solution found by any other process
+        algorithmStats[j][1] = 0
         bestGroupB[j] = []
         bestGroupC[j] = []
         bestCloseness[j] = dataObjects[0]['input']['diameter']
         bestBetw[j] = 0
+        bestProcess = -1
+        bestGreedySolution = 0.0
         for o in dataObjects: #loop on the solution produced by each process
+            procId = dataObjects.index(o)
             groupSize = o['input']['groupSize']
+            # initialize the best greedy solution
+            if bestGreedySolution == 0 and procId == 0:
+                bestGreedySolution = bestBetw[j] = \
+                        o['output'][j]['betweenness']
+                bestProcess = 0
             if j in o['output']:
                 if o['output'][j]['betweenness'] > bestBetw[j]:
                     bestGroupB[j] = o['output'][j]['groupB']
                     bestBetw[j] = o['output'][j]['betweenness']
+                    if procId != 0:
+                        bestProcess = 1
+
                 if o['output'][j]['closeness'] < bestCloseness[j]:
                     bestGroupC[j] = o['output'][j]['groupC']
                     bestCloseness[j] = o['output'][j]['closeness']
+        if  bestProcess == 1:
+            greedySolutionLoss[j].append((bestGreedySolution -\
+                bestBetw[j])/bestGreedySolution)
+        else:
+            greedySolutionLoss[j].append(0)
+
+        algorithmStats[j][bestProcess] += 1
+
+    for j in algorithmStats:
+        print "% of improved searches", 100.0*algorithmStats[j][1] / \
+                (algorithmStats[j][0]+algorithmStats[j][1])
+        print "% improvement of the solution", \
+                100*np.average(greedySolutionLoss[j])
+
 
     if mode == "greedy":
         return bestBetw, bestGroupB, \

@@ -18,14 +18,17 @@ def checkSolution(g, mprChoice):
     return nx.is_connected(newGraph) 
 
 
-def purgeNonMPRLinks(graph, solution):
+def purgeNonMPRLinks(graph, solution, weighted=False):
     """ generate a new graph only with links selector-MPR."""
     newGraph = nx.Graph()
     newGraph.add_nodes_from(graph.nodes())
     for n1 in graph.nodes():
         # see the return value of solveMPRProblem to understand this:
         for m in iter(solution[n1]).next():
-            newGraph.add_edge(n1,m)
+            if weighted:
+                newGraph.add_edge(n1,m, weight=graph[n1][m]["weight"])
+            else:
+                newGraph.add_edge(n1,m)
     return newGraph
 
 def solveMPRProblem(graph, mode = "RFC"):

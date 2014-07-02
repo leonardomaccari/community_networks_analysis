@@ -17,16 +17,31 @@ def checkSolution(g, mprChoice):
     newGraph = purgeNonMPRLinks(g, mprChoice)
     return nx.is_connected(newGraph) 
 
+def getNodeView(node, solution,  G, metric="weight"):
+    """ Generate a graph that represents the view of a node in OLSR.
+    This contains all the links up to 2-hop neighs and then only 
+    links between MPRs and selectors """
 
-def purgeNonMPRLinks(graph, solution, weighted=False):
+    purgedGraph = purgeNonMPRLinks(G, solution, metric=metric)
+    for neigh in G[node]:
+        purgedGraph.add_edge(node, neigh,
+                attr_dict = {metric:G[node][neigh][metric]})
+        for n2 in G[neigh]:
+            purgedGraph.add_edge(neigh, n2,
+                    attr_dict = {metric:G[neigh][n2][metric]})
+    return purgedGraph
+
+
+def purgeNonMPRLinks(graph, solution, metric=""):
     """ generate a new graph only with links selector-MPR."""
     newGraph = nx.Graph()
     newGraph.add_nodes_from(graph.nodes())
     for n1 in graph.nodes():
         # see the return value of solveMPRProblem to understand this:
         for m in iter(solution[n1]).next():
-            if weighted:
-                newGraph.add_edge(n1,m, weight=graph[n1][m]["weight"])
+            if metric != "":
+                newGraph.add_edge(n1,m, attr_dict={\
+                        metric:graph[n1][m][metric]})
             else:
                 newGraph.add_edge(n1,m)
     return newGraph
@@ -65,19 +80,19 @@ def solveMPRProblem(graph, mode = "RFC"):
         ss[node] = solset 
     return ss
 
-def lqmprset(i, graph):
+def lqmprset(i, graph, metric="weight"):
     """ find isolated nodes and apply quality-based algorithm."""
     mprv, ni2d = isolatedNodes(i,graph)
     n2hop=defaultdict(dict)
     for neigh in graph[i].items():
         try:
-            w = graph[i][neigh[0]]["weight"]
+            w = graph[i][neigh[0]][metric]
         except KeyError:
             print >> sys.stderr, "ERROR: can not compute lq mpr on a graph",\
                     "without weights on the edges: w", graph[i][neigh[0]]
             sys.exit()
         for h2neigh in graph[neigh[0]].items():
-            n2hop[h2neigh[0]][neigh[1]['weight']+w] = neigh[0]
+            n2hop[h2neigh[0]][neigh[1][metric]+w] = neigh[0]
     mprset = set()
     for neigh2, weightSet in n2hop.items():
         weightMin = min(weightSet)

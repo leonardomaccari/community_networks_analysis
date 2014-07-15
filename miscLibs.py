@@ -147,6 +147,7 @@ def launchParallelProcesses(inputValues, parallelism=4, maxLifeTime=-1,
                             proc.terminate()
                     toBePurged.append(p)
             else:
+                # get the results from the corresponding queue
                 inputValues[v[2]]['output'] = v[1].get()
                 queueStack.append(v[1])
                 toBePurged.append(p)

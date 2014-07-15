@@ -42,7 +42,6 @@ def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
     diameter = 10000 # just a very long path weight
     if shortestPathsCache == None:
         shortestPaths = defaultdict(defaultdict)
-        print "initializing shortespathcache", datetime.now()
         for source in graph.nodes():
                 for target in graph.nodes():
                     if target in shortestPaths[source]:
@@ -69,7 +68,6 @@ def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
 
     else:
         shortestPaths = shortestPathsCache
-    print "ok with initializing shortespathcache", datetime.now()
 
     # remove leaf nodes, they have no centrality
     purgedGraph = []
@@ -156,20 +154,55 @@ def parseGroupMetricResults(dataObjects, mode):
     # note, we return only one solution among the possible ones. This has no real
     # impact in weighted graphs, in which the solution is most likely just 
     # one, but it may change in unweighted graphs
+
+    # Collecting stats about the GRASP implementation of the greedy
+    # algorithm
+    algorithmStats = defaultdict(dict)
+    greedySolutionLoss = defaultdict(list)
     for j in dataObjects[0]['output']: # loop on the sol size (1..groupSize)
+        # best solution found by greedy algorithm (the process with Id 0
+        # always follows the best gradient)
+        algorithmStats[j][0] = 0
+        # best solution found by any other process
+        algorithmStats[j][1] = 0
         bestGroupB[j] = []
         bestGroupC[j] = []
         bestCloseness[j] = dataObjects[0]['input']['diameter']
         bestBetw[j] = 0
+        bestProcess = -1
+        bestGreedySolution = 0.0
         for o in dataObjects: #loop on the solution produced by each process
+            procId = dataObjects.index(o)
             groupSize = o['input']['groupSize']
+            # initialize the best greedy solution
+            if bestGreedySolution == 0 and procId == 0:
+                bestGreedySolution = bestBetw[j] = \
+                        o['output'][j]['betweenness']
+                bestProcess = 0
             if j in o['output']:
                 if o['output'][j]['betweenness'] > bestBetw[j]:
                     bestGroupB[j] = o['output'][j]['groupB']
                     bestBetw[j] = o['output'][j]['betweenness']
+                    if procId != 0:
+                        bestProcess = 1
+
                 if o['output'][j]['closeness'] < bestCloseness[j]:
                     bestGroupC[j] = o['output'][j]['groupC']
                     bestCloseness[j] = o['output'][j]['closeness']
+        if  bestProcess == 1:
+            greedySolutionLoss[j].append((bestGreedySolution -\
+                bestBetw[j])/bestGreedySolution)
+        else:
+            greedySolutionLoss[j].append(0)
+
+        algorithmStats[j][bestProcess] += 1
+
+    for j in algorithmStats:
+        print "% of improved searches", 100.0*algorithmStats[j][1] / \
+                (algorithmStats[j][0]+algorithmStats[j][1])
+        print "% improvement of the solution", \
+                100*np.average(greedySolutionLoss[j])
+
 
     if mode == "greedy":
         return bestBetw, bestGroupB, \
@@ -232,31 +265,23 @@ def greedyGroupBetweenness(dataObject, q):
         candidatesC = nodeSet - currentCGroup
         Bdict = {}
         Cdict = {}
-        # I try to use one loop for both metrics
-        for n in candidatesB|candidatesC:
+        for n in candidatesB:
             newG = currentBGroup|set([n])
             betw, cl = groupMetricForOneGroup(graph, newG, shortestPaths)
             # save for each candidate group the increment Vs the 
             # current solution
+
+            # this must be a positive increment, for both metrics
             Bdict[nodeToFloat[n]] = betw - bestB
 
+        for n in candidatesC:
+            newG = currentCGroup|set([n])
+            betw, cl = groupMetricForOneGroup(graph, newG, shortestPaths)
             # closeness can be not monotinc with len(newG). See comments in
             # groupMetricForOneGroup(). Shoul be unneeded but I keep it 
             # for reference
             if bestC > cl: 
                 Cdict[nodeToFloat[n]] = bestC - cl
-
-        # to have only one loop I may add nodes already in the current solution
-        for n in currentBGroup:
-            try: 
-                del Bdict[nodeToFloat[n]]
-            except KeyError:
-                pass
-        for n in currentCGroup:
-            try: 
-                del Cdict[nodeToFloat[n]]
-            except KeyError:
-                pass
 
         if myId == 0:
             # one process deterministically chooses the best solution.
@@ -267,6 +292,7 @@ def greedyGroupBetweenness(dataObject, q):
                 currentBGroup.add(floatToNode[f[0]]) 
                 bestB = bestB + f[1]
             if len(Cdict) != 0:
+                # order the increments from the larges to the smallest
                 f = sorted(Cdict.items(), key=lambda x: x[1],
                         reverse=True)[myId]
                 currentCGroup.add(floatToNode[f[0]])
@@ -285,7 +311,7 @@ def greedyGroupBetweenness(dataObject, q):
                 # stats only handles integer labels, that's the reason for 
                 # dummy floatToNode[] and nodeToFloat[]
                 custDist = stats.rv_discrete(values=(Bdict.keys(), 
-                    normalizedIncrement))
+                    normalizedIncrement), name="custDist")
                 r = custDist.rvs()
                 f = floatToNode[r]
                 currentBGroup.add(f)
@@ -295,7 +321,7 @@ def greedyGroupBetweenness(dataObject, q):
                 totIncrement = sum(Cdict.values())
                 normalizedIncrement = [k/totIncrement for k in Cdict.values()]
                 custDist = stats.rv_discrete(values=(Cdict.keys(), 
-                    normalizedIncrement))
+                    normalizedIncrement), name="custDist")
 
                 r = custDist.rvs()
                 f = floatToNode[r]

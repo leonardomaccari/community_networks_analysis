@@ -3,12 +3,6 @@ community_networks_analysis
 
 python scripts to inspect the network graphs of community networks
 
-The first release is able to compute the group betweenness and closeness
-centrality with an exhaustive search over all the possible groups. This
-scales up to group size of 4/5 nodes on a network of 110 nodes. 
-Future versions may have some more optimized algorithms in order to
-scale on larger sizes. 
-
 
 
 This scripts relies on networkX library, currently tested on 1.6.2.
@@ -28,17 +22,27 @@ files:
 - miscLibs.py: some helper functions to draw the graph, compute ccdn
                etc...
 - groupMetrics.py: the functions needed to compute the group betweenness
-                   and group closeness centrality.
+                   and group closeness centrality. 
 - genGraphs.py: graph loader and generator
 - graphAnalyzer.py: this is the place were you should ghange your code to
                     use the functions defined in other libraries. Some
                     of its current functions will be improved and moved
                     into libraries.
+- mpr.py: this file contains functions to detect the set of MPRs
+(multi-point relays) as defined in the OLSR protocol, and also with 
+link quality metrics
 - smalldata/tests.edges: a fragment of the ninux.org topology
  
 
 
 BugFixes and Updates:
+
+============= Version 0.2 : July 2014
+
+This version introduces mpr.py. This file contains libraries that
+are able to reproduce some of the features of the OLSR protocol, 
+like the computation of multi-point relays with and without link
+quality metrics
 
 ============= Version 0.1 : January 2014
 

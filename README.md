@@ -10,8 +10,6 @@ Future versions may have some more optimized algorithms in order to
 scale on larger sizes. 
 
 
-
-
 This scripts relies on networkX library, currently tested on 1.6.2.
 
 usage:
@@ -29,12 +27,15 @@ files:
 - miscLibs.py: some helper functions to draw the graph, compute ccdn
                etc...
 - groupMetrics.py: the functions needed to compute the group betweenness
-                   and group closeness centrality.
+                   and group closeness centrality. 
 - genGraphs.py: graph loader and generator
 - graphAnalyzer.py: this is the place were you should ghange your code to
                     use the functions defined in other libraries. Some
                     of its current functions will be improved and moved
                     into libraries.
+- mpr.py: this file contains functions to detect the set of MPRs
+(multi-point relays) as defined in the OLSR protocol, and also with 
+link quality metrics
 - smalldata/tests.edges: a fragment of the ninux.org topology
 - 
 

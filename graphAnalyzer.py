@@ -14,6 +14,8 @@ from collections import defaultdict
 from pylab import *
 import matplotlib.pyplot  as pyplot
 
+from robustness import *
+
 class dataObject():
     """ helper class for parseGraph() data storage."""
     numNodes = 0
@@ -156,15 +158,18 @@ def compareShortestPaths(graph, purgedGraph, results):
     return results
 
 
+def robustnessAnalysis(graph):
+    mc, nmc = computeRobustness(graph, tests=1, mode="simple", purge="nodes")
+    print mc
+
 def extractData(G):
     """ extract wanted data from the graph. """
     data = dataObject()
-    print "Evaluating ETX metrics"
-    print "Now evaluating Group metrics"
+    robustnessAnalysis(G)
     #getGroupMetrics(G, data)
     #data.etxStats = etxAnalysis(G)
-    HNAAnalysis(G, data)
-    data.printTable()
+    #HNAAnalysis(G, data)
+    #data.printTable()
 
 def HNAAnalysis(graph, data):
      

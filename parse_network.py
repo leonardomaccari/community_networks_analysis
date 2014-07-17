@@ -19,6 +19,7 @@ from genGraphs import *
 from groupMetrics import *
 from graphAnalyzer import *
 from miscLibs import *
+from robustness import *
 
 
 
@@ -61,6 +62,7 @@ def usage():
     print >> sys.stderr, " -f graph\
             (adjacency list (.adj) or edge list (.edges) as used by networkX)"
     print >> sys.stderr, " [-s] show graph" 
+    print >> sys.stderr, " [-e] extract data" 
     print >> sys.stderr, " [-t] run a test with known graphs" 
 
 
@@ -81,8 +83,8 @@ def testRun():
     """ run groupMetrics on a known set of graphs, check the results.""" 
     print >> sys.stderr, "Testing group betweenness centrality"
     L = genGraph("LINEAR", 3)
-    betw, solB, clos, solC, s = computeGroupMetrics(L, 1, weighted = False, 
-            cutoff = 1)
+    betw, solB, clos, solC, s = computeGroupMetrics(L, groupSize=1, 
+            weighted=False, cutoff = 1)
     ok = True
 
     # in a 3-nodes network, node 1 has betweenness 1 and closeness 0.6 (recall
@@ -101,6 +103,14 @@ def testRun():
     betw, solB, clos, solC, s  = computeGroupMetrics(L, 1, weighted = False, 
             cutoff = 2)
 
+    mc, nmc = computeRobustness(L, purge="nodes", tests=10000)
+    # robustness of a 5-nodes line: (4+3+2+3+4)/(5*5) = 0.64
+    if int(mc[1]*100) != 64:
+        print >> sys.stderr, "Robustness of the 5 nodes line should be ",\
+                "approximately 0.64. It is", mc[1]
+        ok = False
+
+    sys.exit(1)
     # note that we count also the routes that start or arrive to a node in the
     # group 
     if solB[0] != set([2]) or betw != 16.0/20:
@@ -192,8 +202,7 @@ def testRun():
             str(r3['betweenness'][3]['betweenness'])[0:3]
         ok = False
 
-
-    #if r1['betweenness'][1][]
+    
 
     if not ok:
         sys.exit(1)

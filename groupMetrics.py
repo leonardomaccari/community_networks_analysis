@@ -69,7 +69,7 @@ def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
     else:
         shortestPaths = shortestPathsCache
 
-    # remove leaf nodes, they have no centrality
+    # remove leaf nodes, they have lower centrality than their neighbors
     purgedGraph = []
     for node in graph.nodes():
         if graph.degree(node) > 1:
@@ -93,7 +93,7 @@ def computeGroupMetrics(graph, groupSize=1, weighted=False, cutoff=1,
         dataObj['input']['numProcessess'] = parallelism
         dataObj['input']['diameter'] = diameter
         dataObjects.append(dataObj)
-        # when each process deletes memory for its own group, 
+        # when each process deletes memory for its own group,
         # if we still have a reference to the dataObj object 
         # it is not deallocated. So deallocate it (it is worth if
         # you pass a lot of data to each process)
@@ -178,6 +178,7 @@ def parseGroupMetricResults(dataObjects, mode):
             if bestGreedySolution == 0 and procId == 0:
                 bestGreedySolution = bestBetw[j] = \
                         o['output'][j]['betweenness']
+                bestGroupB[j] = o['output'][j]['groupB']
                 bestProcess = 0
             if j in o['output']:
                 if o['output'][j]['betweenness'] > bestBetw[j]:
@@ -362,7 +363,7 @@ def singleProcessGroupMetrics(dataObject, q):
         bestRes['groupB'] = []
         bestRes['groupC'] = []
         dataObject['output'] = bestRes
-        print "Subprocess with empy dataset"
+        print "Subprocess with empty dataset"
         q.put(bestRes)
         return
     bestB = 0

@@ -1,8 +1,17 @@
 community_networks_analysis
 ===========================
 
-python scripts to inspect the network graphs of community networks
+python code to inspect the network graphs of community networks.
 
+It has been used for the paper "A week in the Life of three large
+Wireless Community Networks" by Leonardo Maccari and Renato Lo Cigno, 
+published in Elsevier Ad-Hoc Networks, currently available as a
+preview at [this
+link](http://www.sciencedirect.com/science/article/pii/S1570870514001474).
+An improved version of the paper, with better text and figures can be found
+[here](http://disi.unitn.it/maccari/CN).
+
+If you use this code we appreciate if you cite the paper.  
 
 
 This scripts relies on networkX library, currently tested on 1.6.2.

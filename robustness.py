@@ -28,6 +28,9 @@ def computeRobustness(graph, tests=100, mode="simple",
     nodeList: list
             instead of simulating random failures, pass a list of nodes
             to be progressively removed
+
+    Returns: {}
+            a dictionary of items "elements removed":"average robustness"
     """
 
     links = []

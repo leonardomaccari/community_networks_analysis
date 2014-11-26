@@ -170,3 +170,20 @@ def launchParallelProcesses(inputValues, parallelism=4, maxLifeTime=-1,
         if aliveProc == parallelism:
             time.sleep(1)
 
+def navigateRoutingTables(globalRT, src, dst, path, quality=0):
+    """ Navigate recoursively a global routing table """
+
+    if src == dst:
+        path.append(src)
+        return [path, quality]
+
+    # next hop to the destination
+    nh = globalRT[src][dst][0]
+    # quality to next hop
+    q = float(globalRT[src][nh][1])
+    if nh in path:
+        print "Error: loop found:", path, src, dst
+        raise
+    print path, src, nh , q, globalRT[src][dst], globalRT[src][nh]
+    path.append(src)
+    return navigateRoutingTables(globalRT, nh, dst, path, quality+q)

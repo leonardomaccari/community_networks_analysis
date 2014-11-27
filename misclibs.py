@@ -64,7 +64,7 @@ def showGraph(C, sol=None):
 
     if len(edgeColors) != 0:
         nx.draw(C, edge_color=edgeColors, width=4, 
-            edge_cmap=plt.cm.Blues, 
+            edge_cmap=plt.cm.bone,
             edge_vmin=min(edgeColors), edge_vmax=max(edgeColors),
             node_color=nodeColors, labels=nodeLabels)
     else:

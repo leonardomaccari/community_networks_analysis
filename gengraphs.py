@@ -77,7 +77,7 @@ def genGraph(graphKind, numNodes):
         for i in range(0,numNodes):
             G.add_edge(i,(i+1)%numNodes)
     elif graphKind == unitDisk:
-        r = 70
+        r = 20
         # 90 nodes with 400*400 is ok, try to keep the same density
         #density = 90.0/(400*400)
         #area = numNodes/density
@@ -128,7 +128,7 @@ def genGraph(graphKind, numNodes):
         numNodes = side*side
     elif graphKind == powerLaw:
         gamma=2
-        powerlaw_gamma = lambda x: nx.powerlaw_sequence(x, exponent=gamma)
+        powerlaw_gamma = lambda x: nx.utils.powerlaw_sequence(x, exponent=gamma)
         loop = True
         for i in range(1000):
             z = nx.utils.create_degree_sequence(numNodes, 

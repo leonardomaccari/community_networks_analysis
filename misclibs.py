@@ -176,7 +176,8 @@ class LoopError(BaseException):
     def __str__(self):
         return self.value
 
-def navigateRoutingTables(globalRT, src, dst, path, quality=0):
+def navigateRoutingTables(globalRT, src, dst, path, quality=0,
+        silent=True):
     """ Navigate recoursively a global routing table """
 
     if src == dst:
@@ -187,14 +188,17 @@ def navigateRoutingTables(globalRT, src, dst, path, quality=0):
     try:
         nh = globalRT[src][dst][0]
     except KeyError:
-        print "no route from ", src, "to", dst, "in the RT of", src,\
+        if not silent:
+            print "no route from ", src, "to", dst, "in the RT of", src,\
                 globalRT[src]
         raise
     # quality to next hop
     q = float(globalRT[src][nh][1])
     if nh in path:
-        print "Error: loop found:", path, src, dst
+        if not silent:
+            print "Error: loop found, path:", path 
+            print "Error: loop found current hop, final dest:", src, dst
+            print "Error: loop found next hop:", nh
         raise LoopError
-    print path, src, nh , q, globalRT[src][dst], globalRT[src][nh]
     path.append(src)
     return navigateRoutingTables(globalRT, nh, dst, path, quality+q)

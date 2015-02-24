@@ -16,7 +16,7 @@ allowedGraphs = [linearGraph, unitDisk, gridGraph, regularGraph,\
 
 
 
-def loadGraph(fname, remap=False, connected=True):
+def loadGraph(fname, remap=False, connected=True, silent=False):
     """ Parameters
     --------------
     fname : string
@@ -28,7 +28,8 @@ def loadGraph(fname, remap=False, connected=True):
 
     """
     G=nx.Graph()
-    print "Loading/Generating Graph"
+    if not silent:
+        print "Loading/Generating Graph"
     # load a file using networkX adjacency matrix structure
     if fname.lower().endswith(".adj"):
         try:
@@ -51,7 +52,8 @@ def loadGraph(fname, remap=False, connected=True):
     if connected:
         C = nx.connected_component_subgraphs(G)[0]
         G = C
-    print >> sys.stderr, "Graph", fname, "loaded",
+    if not silent:
+        print >> sys.stderr, "Graph", fname, "loaded",
     # remap node labels so we don't have "holes" in the numbering
     if remap:
         mapping=dict(zip(G.nodes(),range(G.order())))

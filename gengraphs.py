@@ -49,7 +49,8 @@ def loadGraph(fname, remap=False, connected=True):
             "adjacency matrix and .edges for edge-list"
         sys.exit(1) 
     if connected:
-        C = nx.connected_component_subgraphs(G)[0]
+        C = sorted(list(nx.connected_component_subgraphs(G)), 
+                key=len, reverse=True)[0]
         G = C
     print >> sys.stderr, "Graph", fname, "loaded",
     # remap node labels so we don't have "holes" in the numbering

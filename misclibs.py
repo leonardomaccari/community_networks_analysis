@@ -63,12 +63,12 @@ def showGraph(C, sol=None):
     ###
 
     if len(edgeColors) != 0:
-        nx.draw(C, edge_color=edgeColors, width=4, 
-            edge_cmap=plt.cm.Blues, 
+        nx.draw(C, edge_color=edgeColors, width=2, 
+            edge_cmap=plt.cm.bone,
             edge_vmin=min(edgeColors), edge_vmax=max(edgeColors),
             node_color=nodeColors, labels=nodeLabels)
     else:
-        nx.draw(C, width=4, node_color=nodeColors, labels=nodeLabels)
+        nx.draw(C, width=2, node_color=nodeColors, labels=nodeLabels)
 
     #plt.savefig("/tmp/graph.svg")
     #nx.write_adjlist(C, "/tmp/graph.list")
@@ -170,3 +170,35 @@ def launchParallelProcesses(inputValues, parallelism=4, maxLifeTime=-1,
         if aliveProc == parallelism:
             time.sleep(1)
 
+class LoopError(BaseException):
+    def __init__(self):
+        self.value = "Loop Detected"
+    def __str__(self):
+        return self.value
+
+def navigateRoutingTables(globalRT, src, dst, path, quality=0,
+        silent=True):
+    """ Navigate recoursively a global routing table """
+
+    if src == dst:
+        path.append(src)
+        return [path, quality]
+
+    # next hop to the destination
+    try:
+        nh = globalRT[src][dst][0]
+    except KeyError:
+        if not silent:
+            print "no route from ", src, "to", dst, "in the RT of", src,\
+                globalRT[src]
+        raise
+    # quality to next hop
+    q = float(globalRT[src][nh][1])
+    if nh in path:
+        if not silent:
+            print "Error: loop found, path:", path 
+            print "Error: loop found current hop, final dest:", src, dst
+            print "Error: loop found next hop:", nh
+        raise LoopError
+    path.append(src)
+    return navigateRoutingTables(globalRT, nh, dst, path, quality+q)

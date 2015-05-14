@@ -16,7 +16,7 @@ allowedGraphs = [linearGraph, unitDisk, gridGraph, regularGraph,\
 
 
 
-def loadGraph(fname, remap=False, connected=True):
+def loadGraph(fname, remap=False, connected=True, silent=False):
     """ Parameters
     --------------
     fname : string
@@ -28,7 +28,8 @@ def loadGraph(fname, remap=False, connected=True):
 
     """
     G=nx.Graph()
-    print "Loading/Generating Graph"
+    if not silent:
+        print "Loading/Generating Graph"
     # load a file using networkX adjacency matrix structure
     if fname.lower().endswith(".adj"):
         try:
@@ -52,7 +53,8 @@ def loadGraph(fname, remap=False, connected=True):
         C = sorted(list(nx.connected_component_subgraphs(G)), 
                 key=len, reverse=True)[0]
         G = C
-    print >> sys.stderr, "Graph", fname, "loaded",
+    if not silent:
+        print >> sys.stderr, "Graph", fname, "loaded",
     # remap node labels so we don't have "holes" in the numbering
     if remap:
         mapping=dict(zip(G.nodes(),range(G.order())))
@@ -78,7 +80,7 @@ def genGraph(graphKind, numNodes):
         for i in range(0,numNodes):
             G.add_edge(i,(i+1)%numNodes)
     elif graphKind == unitDisk:
-        r = 70
+        r = 20
         # 90 nodes with 400*400 is ok, try to keep the same density
         #density = 90.0/(400*400)
         #area = numNodes/density
@@ -129,7 +131,7 @@ def genGraph(graphKind, numNodes):
         numNodes = side*side
     elif graphKind == powerLaw:
         gamma=2
-        powerlaw_gamma = lambda x: nx.powerlaw_sequence(x, exponent=gamma)
+        powerlaw_gamma = lambda x: nx.utils.powerlaw_sequence(x, exponent=gamma)
         loop = True
         for i in range(1000):
             z = nx.utils.create_degree_sequence(numNodes, 
